@@ -1,0 +1,11 @@
+{
+  "timestamp": "2025-11-20T09-00-16-366Z",
+  "created": "2025-11-20T09:00:16.784Z",
+  "size": "0.08 MB",
+  "contents": {
+    "modules": 5,
+    "plugins": 11,
+    "database": true,
+    "logs": 0
+  }
+}

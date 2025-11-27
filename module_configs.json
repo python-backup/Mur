@@ -1,0 +1,34 @@
+{
+  "help": {
+    "enabled": true,
+    "settings": {
+      "debug": true,
+      "notifications": false,
+      "auto": false
+    }
+  },
+  "weather": {
+    "enabled": true,
+    "settings": {}
+  },
+  "admin": {
+    "enabled": true,
+    "settings": {}
+  },
+  "info": {
+    "enabled": true,
+    "settings": {}
+  },
+  "mod": {
+    "enabled": true,
+    "settings": {}
+  },
+  "install": {
+    "enabled": true,
+    "settings": {
+      "notifications": false,
+      "auto": true,
+      "debug": true
+    }
+  }
+}
