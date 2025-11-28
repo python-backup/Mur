@@ -5,6 +5,8 @@ from flask import Flask, request, jsonify
 import importlib.util
 import logging
 import asyncio
+from pyrogram import Client
+import threading
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,6 +18,26 @@ class PluginManager:
         self.plugins_dir = "python_plugins"
         os.makedirs(self.plugins_dir, exist_ok=True)
         self.loaded_plugins = {}
+        self.client = None
+        self.client_ready = False
+    
+    def init_client_sync(self):
+        try:
+            self.client = Client(
+                "my_bot",
+                api_id=21624658,
+                api_hash="041636f0be841d66a5010d9b9a55285a",
+            )
+            self.client.start()
+            self.client_ready = True
+            logger.info("✅ Pyrogram клиент инициализирован")
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации клиента: {e}")
+    
+    def init_client_async(self):
+        thread = threading.Thread(target=self.init_client_sync)
+        thread.daemon = True
+        thread.start()
     
     def load_plugin(self, plugin_name):
         try:
@@ -39,6 +61,9 @@ class PluginManager:
     
     def execute_plugin_function(self, plugin_name, function_name):
         try:
+            if not self.client_ready:
+                return {"success": False, "error": "Клиент Pyrogram не инициализирован"}
+            
             if plugin_name not in self.loaded_plugins:
                 load_result = self.load_plugin(plugin_name)
                 if not load_result["success"]:
@@ -51,16 +76,10 @@ class PluginManager:
             
             func = getattr(module, function_name)
             
-            from client_manager import client_manager
-            client = client_manager.get_client()
-            
-            if client is None:
-                return {"success": False, "error": "Клиент Pyrogram не доступен"}
-            
             if asyncio.iscoroutinefunction(func):
-                result = asyncio.run(func(client))
+                result = asyncio.run(func(self.client))
             else:
-                result = func(client)
+                result = func(self.client)
             
             return {"success": True, "data": str(result)}
             
@@ -90,4 +109,5 @@ def health():
 
 if __name__ == '__main__':
     print('🚀 Python Plugin Server running on port 6000')
+    plugin_manager.init_client_async()
     app.run(host='0.0.0.0', port=6000, debug=False)
