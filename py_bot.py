@@ -1,3 +1,4 @@
+# py_bot.py
 import asyncio
 import subprocess
 import time
@@ -6,6 +7,7 @@ import os
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import aiohttp
+from core.client_manager import client_manager
 
 API_ID = 21624658
 API_HASH = "041636f0be841d66a5010d9b9a55285a"
@@ -64,8 +66,10 @@ class BotManager:
                 "my_bot",
                 api_id=API_ID,
                 api_hash=API_HASH,
-                session_string=SESSION_STRING
             )
+            
+            # Регистрируем клиент
+            client_manager.set_client(self.bot_client)
             
             @self.bot_client.on_message(filters.text & (filters.group | filters.private))
             async def handle_all_messages(client, message: Message):
