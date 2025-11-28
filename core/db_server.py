@@ -1,4 +1,3 @@
-# core/db_server.py
 from flask import Flask, request, jsonify
 from database import Database
 
@@ -10,7 +9,7 @@ def check_auth():
     data = request.get_json()
     username = data.get('username')
     
-    if not username:
+    if not username or username == 'unknown':
         return jsonify({'error': 'Username required'}), 400
     
     master_user = db.get_master_user()
@@ -18,8 +17,16 @@ def check_auth():
         db.set_master_user(username)
         return jsonify({'is_master': True, 'first_run': True})
     
-    is_master = db.is_authorized_user(username)
-    return jsonify({'is_master': is_master, 'first_run': False})
+    is_master = db.is_master(username)
+    is_admin = db.is_admin(username)
+    is_authorized = is_master or is_admin
+    
+    return jsonify({
+        'is_master': is_master,
+        'is_admin': is_admin,
+        'is_authorized': is_authorized,
+        'first_run': False
+    })
 
 @app.route('/auth/check_master', methods=['POST'])
 def check_master():

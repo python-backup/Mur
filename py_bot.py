@@ -1,4 +1,3 @@
-# py_bot.py
 import asyncio
 import subprocess
 import time
@@ -7,14 +6,9 @@ import os
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import aiohttp
-import logging
-
-logging.basicConfig(level=logging.INFO, format='%(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 API_ID = 21624658
 API_HASH = "041636f0be841d66a5010d9b9a55285a"
-SESSION_STRING = "AgFJ91IAIUPcrQuke810_XtgTZsDMz2lhH7F0NOCPXfCf7IsIlKInhDu7I_iP8AhffO8Uv7duDbx-oxBlukoW6sNArLzagcz0V8rDfvVnOijVw_hYhDWJQ7Jh6Y5a06t8yH8pjMnuz89PFA-ee-n3S8Cc2V1CTI69sKz50JxFuiMSnzAuSYqqZhX491ZBUe40sz9sXRq7dNVTgv2MGo5t3O4ioMBTQ8ew5Wu_nsc9SDmyuC5SBBZ0Bg6CvHY3vF4_XWvjrkfZ27MSXA4B4Q0rCyjugEefH3RZ_rR8MBs6kNLUT-hSpdtrtuaEwSP76InAf_UnC05VOXr-jzNb-dF8VRkTNB3EAAAAAHYrRf3AA"
 
 class BotManager:
     def __init__(self):
@@ -24,7 +18,7 @@ class BotManager:
         self.bot_client = None
 
     def start_servers(self):
-        print("🚀 Запуск всех серверов...")
+        print("Запуск серверов...")
         
         os.makedirs('modules/root', exist_ok=True)
         os.makedirs('modules/user', exist_ok=True)
@@ -37,7 +31,7 @@ class BotManager:
         ]
         
         for server in servers:
-            print(f"📊 Запуск {server['name']} (порт {server['port']})...")
+            print(f"Запуск {server['name']}...")
             try:
                 process = subprocess.Popen(
                     [sys.executable, server['script']] if server['script'].endswith('.py') else ["node", server['script']],
@@ -56,28 +50,34 @@ class BotManager:
                 time.sleep(2)
                 
             except Exception as e:
-                print(f"❌ Ошибка запуска {server['name']}: {e}")
+                print(f"Ошибка запуска {server['name']}: {e}")
                 return False
         
-        print("✅ Все серверы запущены!")
+        print("Все серверы запущены!")
         return True
 
     async def start_bot(self):
-        print("🤖 Запуск Telegram бота...")
+        print("Запуск Telegram бота...")
         
         try:
             self.bot_client = Client(
                 "my_bot",
                 api_id=API_ID,
-                api_hash=API_HASH
+                api_hash=API_HASH,
+                session_string=SESSION_STRING
             )
             
-            async def handle_command_message(client, message: Message, is_group: bool):
-                username = message.from_user.username if message.from_user else "unknown"
+            @self.bot_client.on_message(filters.text & (filters.group | filters.private))
+            async def handle_all_messages(client, message: Message):
+                me = await client.get_me()
+                if message.from_user and message.from_user.id != me.id:
+                    return
                 
-                is_master = await self.check_user_auth(username)
+                username = me.username
                 
-                if not is_master:
+                is_authorized = await self.check_user_auth(username)
+                
+                if not is_authorized:
                     return
                 
                 prefix = await self.get_current_prefix()
@@ -86,9 +86,9 @@ class BotManager:
                     command = message.text[len(prefix):].split()[0]
                     params = {"args": message.text.split()[1:]}
                     
-                    processing_text = f"🔄 Выполняется команда `{command}`..."
+                    processing_text = f"Выполняется команда `{command}`..."
                     try:
-                        await message.edit_text(processing_text)
+                        processing_msg = await message.reply(processing_text)
                     except Exception as e:
                         processing_msg = await message.reply(processing_text)
                     
@@ -98,46 +98,38 @@ class BotManager:
                         response_text = result['data']
                         if response_text and response_text.strip():
                             try:
-                                await message.edit_text(response_text)
+                                await processing_msg.edit_text(response_text)
                             except Exception as e:
-                                logger.error(f"Error editing message: {e}")
                                 await message.reply(response_text)
                     else:
                         error_msg = result.get('error', 'Unknown error')
                         if error_msg and "Недостаточно прав" not in error_msg and "недостаточно прав" not in error_msg:
-                            error_text = f"❌ **Ошибка**: `{error_msg}`"
+                            error_text = f"Ошибка: `{error_msg}`"
                             try:
-                                await message.edit_text(error_text)
+                                await processing_msg.edit_text(error_text)
                             except Exception as e:
-                                logger.error(f"Error editing error message: {e}")
                                 await message.reply(error_text)
                         else:
                             try:
-                                await message.delete()
+                                await processing_msg.delete()
                             except:
                                 pass
-
-            @self.bot_client.on_message(filters.text & filters.group)
-            async def handle_group_messages(client, message: Message):
-                await handle_command_message(client, message, is_group=True)
-
-            @self.bot_client.on_message(filters.text & filters.private)
-            async def handle_private_messages(client, message: Message):
-                await handle_command_message(client, message, is_group=False)
             
             await self.bot_client.start()
-            print("✅ Telegram бот запущен!")
-            print(f"👤 Бот работает как: {await self.bot_client.get_me()}")
+            print("Telegram бот запущен!")
             
             await self.idle()
             
         except Exception as e:
-            logger.error(f"❌ Ошибка запуска бота: {e}")
+            print(f"Ошибка запуска бота: {e}")
             raise
 
     async def check_user_auth(self, username: str) -> bool:
         async with aiohttp.ClientSession() as session:
             try:
+                if not username or username == 'unknown':
+                    return False
+                    
                 payload = {"username": username}
                 async with session.post(
                     "http://localhost:5000/auth/check", 
@@ -146,43 +138,18 @@ class BotManager:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data.get('is_master', False)
+                        return data.get('is_master', False) or data.get('first_run', False) or data.get('is_authorized', False)
                     return False
             except Exception as e:
-                logger.error(f"Auth check error: {e}")
                 return False
 
     async def execute_command(self, command: str, username: str, params: dict = None, message: Message = None):
         async with aiohttp.ClientSession() as session:
             try:
-                if not await self.check_user_auth(username):
-                    return {
-                        "success": False, 
-                        "error": ""
-                    }
-                
-                if command == 'install' and message:
-                    try:
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location("module_installer", "python_plugins/module_installer.py")
-                        module_installer = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module_installer)
-                        
-                        result = await module_installer.install_module(self.bot_client, message)
-                        
-                        return {
-                            "success": True,
-                            "data": result
-                        }
-                    except Exception as e:
-                        return {"success": False, "error": f"Ошибка установки: {str(e)}"}
-                
-                message_data = self.serialize_message(message) if message else None
-                
                 payload = {
                     "username": username, 
                     "params": params or {},
-                    "message": message_data
+                    "message": self.serialize_message(message) if message else None
                 }
                 
                 async with session.post(
@@ -225,14 +192,7 @@ class BotManager:
             return {}
 
     async def get_current_prefix(self):
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get("http://localhost:5000/settings/prefix", timeout=5) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data.get('prefix', '.')
-            except:
-                return '.'
+        return '.'
 
     def check_servers(self):
         import requests
@@ -249,85 +209,78 @@ class BotManager:
             try:
                 response = requests.get(server['url'], timeout=5)
                 if response.status_code == 200:
-                    print(f"✅ {server['name']} сервер работает")
+                    print(f"{server['name']} сервер работает")
                 else:
-                    print(f"❌ {server['name']} сервер не отвечает")
+                    print(f"{server['name']} сервер не отвечает")
                     servers_ok = False
             except Exception as e:
-                print(f"❌ {server['name']} сервер не запущен: {e}")
+                print(f"{server['name']} сервер не запущен: {e}")
                 servers_ok = False
                 
         return servers_ok
 
     async def idle(self):
-        print("\n" + "="*50)
-        print("🤖 Бот работает! Команды работают только для владельца")
-        print("📁 Модули автоматически загружаются из папок modules/")
-        print("🐍 Python плагины доступны из папки python_plugins/")
-        print("🔐 Сообщения от других пользователей игнорируются")
-        print("🔄 Сообщения команд теперь заменяются результатом")
-        print("🛑 Для остановки нажми Ctrl+C")
-        print("="*50)
+        print("Бот работает!")
         
         try:
             while True:
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
-            print("\n🛑 Останавливаем бота...")
+            print("Останавливаем бота...")
 
     def stop_servers(self):
-        print("\n🛑 Остановка серверов...")
+        print("Остановка серверов...")
         
         if self.bot_client:
             try:
                 self.bot_client.stop()
-                print("✅ Бот остановлен")
+                print("Бот остановлен")
             except:
                 pass
         
         if self.node_process:
             try:
                 self.node_process.terminate()
-                print("✅ Node.js сервер остановлен")
+                print("Node.js сервер остановлен")
             except:
                 pass
         
         if self.plugin_process:
             try:
                 self.plugin_process.terminate()
-                print("✅ Python Plugin сервер остановлен")
+                print("Python Plugin сервер остановлен")
             except:
                 pass
         
         if self.db_process:
             try:
                 self.db_process.terminate()
-                print("✅ Python БД сервер остановлен")
+                print("Python БД сервер остановлен")
             except:
                 pass
         
-        print("👋 Все остановлено!")
+        print("Все остановлено!")
 
 async def main():
     manager = BotManager()
     
     try:
         if not manager.start_servers():
-            print("❌ Не удалось запустить серверы")
+            print("Не удалось запустить серверы")
             return
         
-        print("\n🔍 Проверка серверов...")
+        print("Проверка серверов...")
         time.sleep(2)
         if not manager.check_servers():
-            print("❌ Серверы не работают корректно")
+            print("Серверы не работают корректно")
             return
         
         await manager.start_bot()
         
     except KeyboardInterrupt:
-        print("\n🛑 Получен сигнал остановки...")
+        print("Получен сигнал остановки...")
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
+        print(f"Критическая ошибка: {e}")
     finally:
         manager.stop_servers()
 
@@ -336,7 +289,7 @@ if __name__ == "__main__":
     
     for file in required_files:
         if not os.path.exists(file):
-            print(f"❌ Отсутствует файл: {file}")
+            print(f"Отсутствует файл: {file}")
             sys.exit(1)
     
     os.makedirs("modules/root", exist_ok=True)
