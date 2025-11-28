@@ -5,8 +5,7 @@ from flask import Flask, request, jsonify
 import importlib.util
 import logging
 import asyncio
-from pyrogram import Client
-import threading
+import subprocess
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,78 +16,66 @@ class PluginManager:
     def __init__(self):
         self.plugins_dir = "python_plugins"
         os.makedirs(self.plugins_dir, exist_ok=True)
-        self.loaded_plugins = {}
-        self.client = None
-        self.client_ready = False
     
-    def init_client_sync(self):
-        try:
-            self.client = Client(
-                "my_bot",
-                api_id=21624658,
-                api_hash="041636f0be841d66a5010d9b9a55285a",
-            )
-            self.client.start()
-            self.client_ready = True
-            logger.info("✅ Pyrogram клиент инициализирован")
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации клиента: {e}")
-    
-    def init_client_async(self):
-        thread = threading.Thread(target=self.init_client_sync)
-        thread.daemon = True
-        thread.start()
-    
-    def load_plugin(self, plugin_name):
+    def execute_plugin_function(self, plugin_name, function_name):
         try:
             plugin_path = os.path.join(self.plugins_dir, f"{plugin_name}.py")
             
             if not os.path.exists(plugin_path):
                 return {"success": False, "error": f"Плагин {plugin_name} не найден"}
             
-            if plugin_name in self.loaded_plugins:
-                return {"success": True, "message": "Плагин уже загружен"}
-            
-            spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            
-            self.loaded_plugins[plugin_name] = module
-            return {"success": True, "message": f"Плагин {plugin_name} загружен"}
-            
-        except Exception as e:
-            return {"success": False, "error": f"Ошибка загрузки плагина: {str(e)}"}
+            python_code = f"""
+import sys
+import os
+sys.path.append(r'{os.path.dirname(plugin_path)}')
+
+try:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('{plugin_name}', r'{plugin_path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     
-    def execute_plugin_function(self, plugin_name, function_name):
-        try:
-            if not self.client_ready:
-                return {"success": False, "error": "Клиент Pyrogram не инициализирован"}
+    from py_bot import BotManager
+    import asyncio
+    
+    async def run():
+        manager = BotManager()
+        await manager.bot_client.start()
+        func = getattr(module, '{function_name}')
+        result = await func(manager.bot_client)
+        print(str(result))
+    
+    asyncio.run(run())
+        
+except Exception as e:
+    print(f"ERROR:{{str(e)}}")
+"""
             
-            if plugin_name not in self.loaded_plugins:
-                load_result = self.load_plugin(plugin_name)
-                if not load_result["success"]:
-                    return load_result
+            process = subprocess.run(
+                [sys.executable, "-c", python_code],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
             
-            module = self.loaded_plugins[plugin_name]
+            output = process.stdout.strip()
             
-            if not hasattr(module, function_name):
-                return {"success": False, "error": f"Функция {function_name} не найдена в плагине {plugin_name}"}
-            
-            func = getattr(module, function_name)
-            
-            if asyncio.iscoroutinefunction(func):
-                result = asyncio.run(func(self.client))
+            if process.returncode == 0:
+                if output.startswith("ERROR:"):
+                    return {"success": False, "error": output[6:]}
+                else:
+                    return {"success": True, "data": output}
             else:
-                result = func(self.client)
-            
-            return {"success": True, "data": str(result)}
-            
+                return {"success": False, "error": process.stderr}
+                
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "Таймаут выполнения"}
         except Exception as e:
-            return {"success": False, "error": f"Ошибка выполнения: {str(e)}"}
+            return {"success": False, "error": f"Ошибка: {str(e)}"}
 
 plugin_manager = PluginManager()
 
-@app.route('/<plugin_name>/<function_name>', methods=['GET', 'POST'])
+@app.route('/<plugin_name>/<function_name>', methods=['POST'])
 def call_plugin(plugin_name, function_name):
     try:
         logger.info(f"🎯 Вызов: {plugin_name}.{function_name}")
@@ -109,5 +96,4 @@ def health():
 
 if __name__ == '__main__':
     print('🚀 Python Plugin Server running on port 6000')
-    plugin_manager.init_client_async()
     app.run(host='0.0.0.0', port=6000, debug=False)
